@@ -628,7 +628,7 @@ RENDER.lock = () => {
   const rows = [], mt = missedToday().length, mn = Object.values(ST.unread).reduce((a, b) => a + b, 0);
   if (mt) rows.push({ g:'phone', t:'부재중 전화', n:mt, go:() => openPhone('log') });
   if (mn) rows.push({ g:'msg', t:'새 메시지', n:mn, go:() => show('msgs') });
-  ST.notifs.filter(n => n.g === 'web' || n.g === 'memo').forEach(n => rows.push({ g:n.g, t:n.s, n:'', go:n.go }));
+  ST.notifs.filter(n => n.g === 'web' || n.g === 'memo').reverse().slice(0, 4).forEach(n => rows.push({ g:n.g, t:n.s, n:'', go:n.go }));
   $('#lkList').innerHTML = rows.map((r, i) => `<button class="lk-row" data-i="${i}">${SMALL[r.g]}<div>${esc(r.t)}</div><b>${r.n}</b></button>`).join('');
   document.querySelectorAll('.lk-row').forEach(b => b.onclick = e => { e.stopPropagation(); unlock(); rows[b.dataset.i].go(); });
 };
