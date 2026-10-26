@@ -502,6 +502,8 @@ const CONFIG = {
 
   // 민수에게 메시지를 보내면 돌아오는 답 (여러 개 넣으면 차례대로)
   minsuReplies: ['엄…'],
+  // 다른 사람도 자동으로 답하게 하려면 여기에 (비워두면 답 없음)
+  autoReplies: { hyewon: [], mom: [] },
 
   // 🥚 이스터에그: 어느 채팅방에서든 왼쪽 말을 보내면 오른쪽 말로 답함 (띄어쓰기 무시)
   easterEggs: { '혜원이바보': '혜원이멍청이' },
@@ -621,6 +623,11 @@ const CHATS = {
     {phase:1, from:'me',  t:'ㅇㅋ 이따 봐', time:'오후 4:06'},
   ],
   quick:{1:['주열아 어디야','괜찮아?','전화 좀 받아'], 2:['주열아','미안해, 손 놓쳐서'], 3:['보고 싶다'], 4:['우리가 이겼어','바다 보러 가기로 했잖아']} },
+  hyewon: { name:'혜원', color:'#d08a3c', msgs:[
+    {phase:1, day:'1960년 3월 14일 월요일'},
+    {phase:1, from:'him', t:'내일 선거날이라 학교 일찍 끝난대', time:'오후 8:15'},
+    {phase:1, from:'me',  t:'ㄹㅇ? 개꿀', time:'오후 8:16'},
+  ] },
   mom: { name:'엄마', color:'#c46a8a', msgs:[
     {phase:1, day:'1960년 3월 15일 화요일'},
     {phase:1, from:'him', t:'어디니? 오늘 밤엔 밖에 나가지 마라', time:'오후 7:30'},
@@ -634,8 +641,8 @@ const CALLS = [
   { name:'엄마', kind:'휴대전화', time:'오후 6:12', date:'3월 15일' },
   { name:'주열', kind:'휴대전화', time:'어제', date:'3월 14일' },
   { name:'주열', kind:'휴대전화', time:'일요일', date:'3월 13일' },
-  { name:'한비', kind:'휴대전화', time:'오전 12:00', date:' 10월 26일' },
-  { name:'혜원', kind:'휴대전화', time:'오후 2:22', date:' 7월 20일' },
+  { name:'한비', kind:'휴대전화', time:'오전 12:00', date:'10월 26일' },
+  { name:'혜원', kind:'휴대전화', time:'오후 2:22', date:'7월 20일' },
 ];
 
 /* ========================================================= */
@@ -855,9 +862,16 @@ function renderPhotos(){
 }
 
 /* ---- 전화 기록 ---- */
+// 오늘 기록은 시각, '어제'·요일은 그대로, 그 밖의 날은 날짜로 표시
+function callWhen(r){
+  const today = STAGES[phase].date.replace(/ \S+요일$/,'').trim(), d = (r.date||'').trim(), t = (r.time||'').trim();
+  if (d === today) return t || d;
+  if (phase === 1 && t && !t.includes(':')) return t;
+  return d || t;
+}
 function renderCalls(){
   $('#callLog').innerHTML = CALLS.map(r => `
-    <div class="log"><div><div class="n ${r.miss?'miss':''}">${r.name}</div><div class="k">${r.kind}</div></div><div class="d">${phase===1 ? r.time : r.date}<i>i</i></div></div>`).join('');
+    <div class="log"><div><div class="n ${r.miss?'miss':''}">${r.name}</div><div class="k">${r.kind}</div></div><div class="d">${callWhen(r)}<i>i</i></div></div>`).join('');
 }
 
 /* ---- 채팅 ---- */
@@ -923,10 +937,11 @@ function send(t){
   const trig = (CONFIG.chatTriggers || []).find(g => g.room === room && norm(g.say) === norm(t));
   if (trig){ replySeq(room, [].concat(trig.reply)); }
   if (room === 'minsu') minsuReply();
+  else { const ar = (CONFIG.autoReplies||{})[room]; if (ar && ar.length){ autoIdx[room] = (autoIdx[room]||0); minsuReply(ar[Math.min(autoIdx[room]++, ar.length-1)], room); } }
   if (room === 'minsu' && phase === 2 && !stage3Started){ clearTimeout(stage2T); stage2T = setTimeout(toStage3, CONFIG.stage2AfterReplySec*1000); }
 }
 
-let minsuIdx = 0, minsuT;
+let minsuIdx = 0, minsuT, autoIdx = {};
 function replySeq(who, list, i = 0){
   if (i >= list.length) return;
   minsuReply(list[i], who);
