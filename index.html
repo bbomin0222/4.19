@@ -143,6 +143,30 @@ input{font:inherit;user-select:text;-webkit-user-select:text}
 .dock{flex:none;height:86px;display:flex;justify-content:space-around;align-items:center;
   background:linear-gradient(rgba(0,0,0,.25),rgba(0,0,0,.6));border-top:1px solid rgba(255,255,255,.15)}
 
+/* ───────── 캘린더 ───────── */
+#cal{background:#f2f2f2;color:#222}
+.calbar{background:linear-gradient(#d9302a,#a3170f);color:#fff}
+.calbar button{font-size:16px;padding:6px 10px;color:#fff}
+.cal-wd{flex:none;display:grid;grid-template-columns:repeat(7,1fr);background:#e2e2e2;border-bottom:1px solid #bbb;font-size:12px;text-align:center;padding:5px 0}
+.cal-wd span:first-child{color:#d9302a}.cal-wd span:last-child{color:#2a62c4}
+.cal-grid{flex:none;display:grid;grid-template-columns:repeat(7,1fr);background:#ccc;gap:1px;border-bottom:1px solid #bbb}
+.cd{height:52px;background:#fff;display:flex;flex-direction:column;align-items:flex-start;padding:3px 4px;font-size:13px;position:relative;text-align:left}
+.cd.o{background:#f6f6f6;color:#bbb}
+.cd.sun{color:#d9302a}.cd.sat{color:#2a62c4}
+.cd.ev{background:#fff4d6;font-weight:700}
+.cd.ev::after{content:"";position:absolute;left:6px;right:6px;bottom:6px;height:5px;border-radius:3px;background:#e8a31a}
+.cd.today{background:#2b7bd8;color:#fff}
+.cd.today::after{background:#fff}
+.cd:active{filter:brightness(.9)}
+.cal-list{flex:1;overflow-y:auto;background:#fff}
+.cal-list .h{font-size:12px;color:#888;padding:8px 12px;background:#f2f2f2;border-bottom:1px solid #ddd}
+.ce{display:flex;gap:10px;align-items:center;width:100%;text-align:left;padding:11px 12px;border-bottom:1px solid #e6e6e6;color:#222}
+.ce i{width:6px;align-self:stretch;border-radius:3px;background:#e8a31a;flex:none}
+.ce.now i{background:#2b7bd8}
+.ce b{font-size:15px;display:block}.ce small{font-size:12px;color:#888}
+.ce em{margin-left:auto;font-style:normal;font-size:12px;color:#2b7bd8;font-weight:700}
+.ce:active{background:#eef4fc}
+
 /* ───────── 전화 ───────── */
 .tabs{flex:none;display:flex;background:linear-gradient(#2c2e33,#17181b);border-bottom:1px solid #000}
 .tab{flex:1;height:52px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:11px;color:#c9ccd2;
@@ -361,6 +385,13 @@ button.row:active{background:#1f3b63}
       <div class="dock" id="dock"></div>
     </div>
 
+    <div class="pg" id="cal">
+      <div class="bar calbar"><button type="button" id="calPrev">◀</button><b id="calTitle"></b><button type="button" id="calNext">▶</button></div>
+      <div class="cal-wd"><span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span></div>
+      <div class="cal-grid" id="calGrid"></div>
+      <div class="cal-list" id="calList"></div>
+    </div>
+
     <div class="pg" id="phone">
       <div class="tabs" id="tabs"></div>
       <div id="phoneBody" style="flex:1;display:flex;flex-direction:column;min-height:0"></div>
@@ -497,12 +528,15 @@ const SMALL = {
 };
 
 /* ---------- 상태 ---------- */
+const FIRST = Math.min(...날짜.map(d => d.단계)), LAST = Math.max(...날짜.map(d => d.단계));
+const AUTO = !!진행.통화끝나면_다음날짜로;
 const ST = {
-  stage:1, cur:'lock', stack:[], room:null, tab:'keypad', dial:'', min:0, minBase:0,
+  stage:0, cur:'lock', stack:[], room:null, tab:'keypad', dial:'', min:0, minBase:0,
   calls: 통화기록.map(c => ({ ...c })), threads:{}, unread:{}, missedUnseen:0,
   seenMemo:new Set(), seenNews:new Set(), notifs:[], replyIdx:{},
   juyeolCalled:false, sentToJuyeol:0, stage3:false, ended:false, video:null, returnTo:'home',
 };
+ST.stage = FIRST;
 Object.keys(문자).forEach(k => { ST.threads[k] = 문자[k].map(m => ({ ...m })); });
 const T = {};
 const clearT = (...ks) => ks.forEach(k => { clearTimeout(T[k]); clearInterval(T[k]); T[k] = null; });
@@ -511,7 +545,7 @@ const D = () => 날짜.find(d => d.단계 === ST.stage) || 날짜[0];
 const dayOnly = s => String(s || '').replace(/\s*\S+요일$/, '').trim();
 const today = () => dayOnly(D().날짜);
 const who = k => 연락처[k] || { 이름:k, 번호:k };
-const stg = m => m.단계 || 1;
+const stg = m => (m.단계 == null ? FIRST : m.단계);
 function parseT(t){ const m = /(오전|오후)\s*(\d+):(\d+)/.exec(t || ''); if (!m) return 0; let h = +m[2] % 12; if (m[1] === '오후') h += 12; return h * 60 + +m[3]; }
 function fmtT(min){ min = ((min % 1440) + 1440) % 1440; const h = Math.floor(min / 60), m = min % 60; return `${h < 12 ? '오전' : '오후'} ${h % 12 || 12}:${String(m).padStart(2, '0')}`; }
 const nowT = () => fmtT(ST.minBase + ST.min);
@@ -549,13 +583,14 @@ function computeUnread(){
   });
 }
 const lastMsg = k => [...ST.threads[k]].reverse().find(m => !m.날 && stg(m) <= ST.stage);
-const missedToday = () => ST.calls.filter(c => c.부재중 && c.날짜 === today());
+const visCalls = () => ST.calls.filter(c => stg(c) <= ST.stage);
+const missedToday = () => visCalls().filter(c => c.부재중 && c.날짜 === today());
 function buildNotifs(){
   const list = [], mt = missedToday();
   if (mt.length) list.push({ id:'miss', g:'phone', t:`부재중 전화 ${mt.length}`, s: who(mt[0].누구).이름, go:() => openPhone('log') });
   Object.keys(ST.unread).forEach(k => { if (ST.unread[k]) list.push({ id:'m_' + k, g:'msg', t: who(k).이름, s: lastMsg(k).내용, go:() => openThread(k) }); });
   뉴스.forEach((n, i) => { if (n.단계 === ST.stage && !ST.seenNews.has(i)) list.push({ id:'n' + i, g:'web', t: n.머리말, s: n.제목, go:() => openArticle(i) }); });
-  메모.forEach((m, i) => { if (ST.stage > 1 && m.단계 === ST.stage && !ST.seenMemo.has(i)) list.push({ id:'o' + i, g:'memo', t:'메모', s: m.제목, go:() => openMemo(i) }); });
+  메모.forEach((m, i) => { if (ST.stage > FIRST && m.단계 === ST.stage && !ST.seenMemo.has(i)) list.push({ id:'o' + i, g:'memo', t:'메모', s: m.제목, go:() => openMemo(i) }); });
   ST.notifs = list; ST.missedUnseen = mt.length; renderSbIcons(); updateBadges();
 }
 function addNotif(n){ ST.notifs = ST.notifs.filter(x => x.id !== n.id); ST.notifs.push(n); renderSbIcons(); }
@@ -572,7 +607,7 @@ function updateBadges(){
   set('msg', Object.values(ST.unread).reduce((a, b) => a + b, 0));
   set('phone', ST.missedUnseen);
   set('web', 뉴스.filter((n, i) => n.단계 <= ST.stage && !ST.seenNews.has(i)).length);
-  set('memo', 메모.filter((m, i) => ST.stage > 1 && m.단계 === ST.stage && !ST.seenMemo.has(i)).length);
+  set('memo', 메모.filter((m, i) => ST.stage > FIRST && m.단계 === ST.stage && !ST.seenMemo.has(i)).length);
 }
 
 /* 알림창 (상태바를 누르면 내려옴) */
@@ -609,7 +644,7 @@ $('#lock').addEventListener('click', e => { if (!e.target.closest('.lk-row') && 
 
 /* ---------- 홈 ---------- */
 const APPS = [
-  { k:'web', n:'인터넷', go:() => show('web') }, { k:'cal', n:'캘린더' }, { k:'memo', n:'메모', go:() => show('memos') }, { k:'clock', n:'시계' },
+  { k:'web', n:'인터넷', go:() => show('web') }, { k:'cal', n:'캘린더', go:() => { ST.calM = null; show('cal'); } }, { k:'memo', n:'메모', go:() => show('memos') }, { k:'clock', n:'시계' },
   { k:'gal', n:'갤러리', go:() => show('gallery') }, { k:'video', n:'동영상', go:() => show('videos') }, { k:'music', n:'음악' }, { k:'set', n:'설정' },
 ];
 const DOCK = [ { k:'phone', n:'전화', go:() => openPhone('keypad') }, { k:'con', n:'연락처', go:() => openPhone('contacts') },
@@ -618,7 +653,8 @@ function icon(a, label = true){
   const g = a.k === 'cal' ? calIcon((D().날짜.match(/(\d+)일/) || [, ''])[1]) : G[a.k];
   return `<button class="app" data-app="${a.k}"><div class="ic ic-${a.k}">${g}<span class="badge" data-badge="${a.k}"></span></div>${label ? `<span>${a.n}</span>` : ''}</button>`;
 }
-const wxIcon = w => /비/.test(w) ? '🌧' : /흐림/.test(w) ? '☁️' : /구름/.test(w) ? '⛅' : '☀️';
+const isNight = () => { const m = ST.minBase + ST.min; return m >= 19 * 60 || m < 6 * 60; };
+const wxIcon = w => /비/.test(w) ? '🌧' : /흐림/.test(w) ? '☁️' : /구름/.test(w) ? (isNight() ? '☁️' : '⛅') : (isNight() ? '🌙' : '☀️');
 RENDER.home = () => {
   tickClock(); $('#wDate').textContent = D().날짜;
   $('#wWx').innerHTML = `<div>${esc(D().지역)}</div><div class="t">${wxIcon(D().날씨)} ${esc(D().기온)}°</div><div>${esc(D().날씨)}</div>`;
@@ -630,6 +666,34 @@ RENDER.home = () => {
   });
   updateBadges();
 };
+
+/* ---------- 캘린더: 날짜를 누르면 그날로 이동 ---------- */
+const monthOf = d => +(d.날짜.match(/(\d+)월/) || [, 3])[1];
+const dayOf = d => +(d.날짜.match(/(\d+)일/) || [, 1])[1];
+RENDER.cal = () => {
+  if (ST.calM == null) ST.calM = monthOf(D());
+  const y = +연도, mo = ST.calM, first = new Date(y, mo - 1, 1).getDay(), days = new Date(y, mo, 0).getDate(), prevDays = new Date(y, mo - 1, 0).getDate();
+  $('#calTitle').textContent = `${y}년 ${mo}월`;
+  const ev = {}; 날짜.forEach(d => { if (monthOf(d) === mo) ev[dayOf(d)] = d; });
+  const cells = [];
+  for (let i = 0; i < first; i++) cells.push(`<div class="cd o">${prevDays - first + 1 + i}</div>`);
+  for (let d = 1; d <= days; d++){
+    const w = (first + d - 1) % 7, e = ev[d], cur = e && e.단계 === ST.stage;
+    cells.push(`<button class="cd ${w === 0 ? 'sun' : w === 6 ? 'sat' : ''} ${e ? 'ev' : ''} ${cur ? 'today' : ''}" data-d="${d}">${d}</button>`);
+  }
+  while (cells.length % 7) cells.push(`<div class="cd o">${cells.length % 7 - (first + days) % 7 + 1}</div>`);
+  $('#calGrid').innerHTML = cells.join('');
+  $('#calGrid').querySelectorAll('button.cd').forEach(b => b.onclick = () => { const e = ev[b.dataset.d]; e ? pickDate(e) : toast(`${mo}월 ${b.dataset.d}일 — 기록이 없어요`); });
+  $('#calList').innerHTML = `<div class="h">일정</div>` + 날짜.map((d, i) => `<button class="ce ${d.단계 === ST.stage ? 'now' : ''}" data-i="${i}"><i></i><div><b>${esc(d.날짜)}</b><small>${esc(d.일정 || '')}</small></div>${d.단계 === ST.stage ? '<em>오늘</em>' : ''}</button>`).join('');
+  $('#calList').querySelectorAll('.ce').forEach(b => b.onclick = () => pickDate(날짜[b.dataset.i]));
+};
+$('#calPrev').onclick = () => { ST.calM = ST.calM === 1 ? 12 : ST.calM - 1; RENDER.cal(); };
+$('#calNext').onclick = () => { ST.calM = ST.calM === 12 ? 1 : ST.calM + 1; RENDER.cal(); };
+function pickDate(d){
+  if (d.단계 === ST.stage) return toast('오늘 날짜예요');
+  toast(`${d.날짜}(으)로 이동합니다`);
+  setTimeout(() => goStage(d.단계), 700);
+}
 
 /* ---------- 전화 ---------- */
 function openPhone(tab){ ST.tab = tab; show('phone'); }
@@ -653,12 +717,13 @@ RENDER.phone = () => {
     $('#pMsg').onclick = () => show('msgs');
   } else if (ST.tab === 'log'){
     ST.missedUnseen = 0; updateBadges(); dropNotif('miss');
-    body.innerHTML = `<div class="scroll">${ST.calls.map((c, i) => {
+    const vc = visCalls();
+    body.innerHTML = `<div class="scroll">${vc.map((c, i) => {
       const p = who(c.누구), when = c.날짜 === today() ? c.시각 : c.날짜;
       const ar = c.부재중 ? G.missArrow : c.발신 ? G.outArrow : G.inArrow;
       return `<button class="row" data-i="${i}"><div class="av">${G.person}</div><div class="mid"><div class="nm ${c.부재중 ? 'miss' : ''}">${esc(p.이름)}</div><div class="sub">${esc(p.번호)}${c.길이 ? ' · ' + esc(c.길이) : ''}</div></div><div class="rt"><span class="dirico">${ar}</span>${esc(when)}</div></button>`;
     }).join('')}</div>`;
-    body.querySelectorAll('.row').forEach(b => b.onclick = () => callOut(ST.calls[b.dataset.i].누구));
+    body.querySelectorAll('.row').forEach(b => b.onclick = () => callOut(vc[b.dataset.i].누구));
   } else if (ST.tab === 'contacts'){
     body.innerHTML = `<div class="scroll">${Object.keys(연락처).map(k => `<div class="row"><div class="av">${G.person}</div><div class="mid"><div class="nm">${esc(연락처[k].이름)}</div><div class="sub">${esc(연락처[k].번호)}</div></div>
       <button class="mini" data-call="${k}">${G.phone}</button>${ST.threads[k] ? `<button class="mini" data-msg="${k}">${G.msg}</button>` : ''}</div>`).join('')}</div>`;
@@ -683,7 +748,7 @@ RENDER.msgs = () => {
 function openThread(k){
   ST.room = k; ST.unread[k] = 0; dropNotif('m_' + k); updateBadges();
   show('thread');
-  if (k === '민수' && ST.stage === 2 && !ST.stage3){ clearT('s2'); T.s2 = setTimeout(toStage3, 진행.민수문자읽고_다음날짜까지 * 1000); }
+  if (AUTO && k === '민수' && ST.stage === 2 && !ST.stage3){ clearT('s2'); T.s2 = setTimeout(toStage3, 진행.민수문자읽고_다음날짜까지 * 1000); }
 }
 RENDER.thread = pop => {
   const k = ST.room, p = who(k), ms = ST.threads[k].filter(m => stg(m) <= ST.stage);
@@ -710,7 +775,7 @@ function sendMsg(t){
   const ar = 자동답장[k] || [];
   if (ar.length){ const i = ST.replyIdx[k] || 0; ST.replyIdx[k] = i + 1; replySeq(k, [ar[Math.min(i, ar.length - 1)]]); }
   if (k === '주열' && ST.stage === 1 && !ST.juyeolCalled && ++ST.sentToJuyeol >= 진행.주열에게_보낼문자수){ clearT('jc'); T.jc = setTimeout(juyeolCall, 진행.문자보내고_전화까지 * 1000); }
-  if (k === '민수' && ST.stage === 2 && !ST.stage3){ clearT('s2'); T.s2 = setTimeout(toStage3, (진행.민수에게답장후_다음날짜까지 + 진행.답장오기까지) * 1000); }
+  if (AUTO && k === '민수' && ST.stage === 2 && !ST.stage3){ clearT('s2'); T.s2 = setTimeout(toStage3, (진행.민수에게답장후_다음날짜까지 + 진행.답장오기까지) * 1000); }
 }
 function replySeq(k, list, i = 0){
   if (i >= list.length) return;
@@ -728,7 +793,7 @@ function replySeq(k, list, i = 0){
 RENDER.memos = () => {
   const list = 메모.map((m, i) => ({ ...m, i })).filter(m => m.단계 <= ST.stage).reverse();
   $('#memoCount').textContent = `${list.length}개`;
-  $('#memoGrid').innerHTML = list.map(m => `<button class="note ${ST.stage > 1 && m.단계 === ST.stage && !ST.seenMemo.has(m.i) ? 'new' : ''}" data-i="${m.i}"><b>${esc(m.제목)}</b><p>${esc(m.내용)}</p><small>${esc(m.날짜)}</small></button>`).join('');
+  $('#memoGrid').innerHTML = list.map(m => `<button class="note ${ST.stage > FIRST && m.단계 === ST.stage && !ST.seenMemo.has(m.i) ? 'new' : ''}" data-i="${m.i}"><b>${esc(m.제목)}</b><p>${esc(m.내용)}</p><small>${esc(m.날짜)}</small></button>`).join('');
   document.querySelectorAll('.note').forEach(b => b.onclick = () => openMemo(+b.dataset.i));
 };
 function openMemo(i){
@@ -743,7 +808,7 @@ function openMemo(i){
 RENDER.web = () => {
   $('#addr').textContent = 'http://m.news.co.kr';
   const list = 뉴스.map((n, i) => ({ ...n, i })).filter(n => n.단계 <= ST.stage).reverse();
-  $('#webBody').innerHTML = `<div class="hd">모바일 뉴스<small>${연도}. ${esc(D().날짜)}</small></div>` + list.map(n => `
+  $('#webBody').innerHTML = `<div class="hd">모바일 뉴스<small>${연도}. ${esc(D().날짜)}</small></div>` + (list.length ? '' : '<div class="empty" style="color:#888">새 소식이 없습니다.</div>') + list.map(n => `
     <button class="nrow" data-i="${n.i}"><div class="tg">${esc(n.머리말)}</div><div class="tt">${esc(n.제목)}${ST.seenNews.has(n.i) ? '' : '<i>N</i>'}</div>
     <div class="sm">${esc(n.내용.split('\n')[0])}</div><div class="tm">${esc(n.시각)}</div></button>`).join('');
   $('#webBody').scrollTop = 0;
@@ -762,7 +827,8 @@ function openArticle(i){
 RENDER.gallery = () => {
   const list = 사진.filter(p => p.단계 <= ST.stage);
   $('#galCount').textContent = `${list.length}장`;
-  $('#pgrid').innerHTML = list.map(p => `<button data-i="${사진.indexOf(p)}" style="background-image:url('${esc(p.파일)}')"></button>`).join('');
+  $('#pgrid').innerHTML = list.length ? '' : '<div class="empty" style="grid-column:1/-1">사진이 없습니다.</div>';
+  $('#pgrid').innerHTML += list.map(p => `<button data-i="${사진.indexOf(p)}" style="background-image:url('${esc(p.파일)}')"></button>`).join('');
   document.querySelectorAll('#pgrid button').forEach(b => b.onclick = () => { const p = 사진[b.dataset.i]; show('photo'); $('#phImg').src = p.파일; $('#phCap').innerHTML = `<b>${esc(p.날짜)}</b>${esc(p.설명)}`; });
 };
 
@@ -870,7 +936,7 @@ function speak(lines, cap){
   };
   setTimeout(next, 900);
 }
-function logCall(extra){ ST.calls.unshift({ 누구:CALL.who, 시각:nowT(), 날짜:today(), ...extra }); }
+function logCall(extra){ ST.calls.unshift({ 누구:CALL.who, 시각:nowT(), 날짜:today(), 단계:ST.stage, ...extra }); }
 function reject(){ stopRing(); CALL.ended = true; logCall({ 부재중:true }); ST.missedUnseen++; afterCall(); }
 function hangUp(){
   if (CALL.ended) return; CALL.ended = true;
@@ -882,8 +948,9 @@ function hangUp(){
 }
 function afterCall(){
   const k = CALL.kind; CALL.kind = null;
-  if (k === 'juyeol') return goStage(2);
-  if (k === 'minsu') return goStage(4);
+  if (AUTO && k === 'juyeol') return goStage(2);
+  if (AUTO && k === 'minsu') return goStage(4);
+  if (k === 'juyeol' || k === 'minsu'){ ST.stack = []; show('home', false); setTimeout(() => toast('📅 캘린더에서 다음 날짜를 눌러 보세요'), 900); return; }
   const back = ST.returnTo && !['lock', 'call'].includes(ST.returnTo) ? ST.returnTo : 'home';
   show(back, false);
 }
@@ -902,7 +969,7 @@ function juyeolCall(){
 }
 function goStage(n){
   stopRing(); stopAudio(); clearT('tick', 'out', 'out2', 'jc', 'fb', 's2', 'tq', 'mc'); CALL.caps.forEach(clearTimeout); CALL.ended = true;
-  ST.stage = n; ST.min = 0; ST.minBase = parseT(D().시각); if (n > 1) ST.juyeolCalled = true; if (n >= 3) ST.stage3 = true;
+  ST.stage = n; ST.min = 0; ST.minBase = parseT(D().시각); if (AUTO && n > 1) ST.juyeolCalled = true; if (n >= 3) ST.stage3 = true;
   computeUnread(); buildNotifs(); closeDrawer();
   ST.stack = []; show('lock', false);
   T.tq = setTimeout(() => tickerQueue(ST.notifs), 600);
@@ -922,7 +989,8 @@ document.addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT') return;
   const k = e.key.toLowerCase(); actx();
   if (k === 'c'){ if (ST.stage === 1) juyeolCall(); else if (ST.stage === 3 && ST.cur !== 'call') incoming('민수', 'minsu'); }
-  if (k === 'n'){ if (ST.stage < 4) goStage(ST.stage + 1); else showEnding(); }
+  if (k === 'n'){ const nx = 날짜.map(d => d.단계).filter(x => x > ST.stage).sort((a, b) => a - b)[0]; if (nx != null) goStage(nx); else showEnding(); }
+  if (k === 'p'){ const pv = 날짜.map(d => d.단계).filter(x => x < ST.stage).sort((a, b) => b - a)[0]; if (pv != null) goStage(pv); }
   if (k === 'r') location.reload();
 });
 
