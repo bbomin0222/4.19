@@ -958,6 +958,9 @@ function callOut(k){
   Object.assign(CALL, { mode:'out', who:k, kind:null, secs:0, ended:false, caps:[] });
   ST.returnTo = ST.cur; show('call', false); callUI(); $('#clSt').textContent = '발신 중…'; $('#clCap').textContent = ''; $('#clCap').className = 'cl-cap'; ringback();
   T.out = setTimeout(() => { clearT('rb'); $('#clCap').textContent = '상대방이 응답하지 않습니다.'; T.out2 = setTimeout(hangUp, 1800); }, 7000);
+    const 대사 = (typeof 받는전화 !== 'undefined') && 받는전화[k];
+  if (대사){ T.out = setTimeout(() => { clearT('rb'); CALL.mode = 'talk'; callUI(); $('#clSt').textContent = '통화 중'; T.tick = setInterval(() => { CALL.secs++; const el = $('#clTime'); if (el) el.textContent = '통화 중 ' + fmtS(CALL.secs); }, 1000); speak(대사, t => { $('#clCap').textContent = '“' + t + '”'; }); }, 4000); return; }
+  
 }
 
 /* ---------- 이야기 진행 ---------- */
